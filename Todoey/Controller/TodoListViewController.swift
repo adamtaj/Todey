@@ -29,17 +29,17 @@ class TodoListViewController: UITableViewController {
         //print(dataFilePath)
         
         
-        let newItem = Item()
-        newItem.title = "Find Mike"
-        itemArray.append(newItem)
-        
-        let newItem2 = Item()
-        newItem2.title = "Buy eggos"
-        itemArray.append(newItem2)
-        
-        let newItem3 = Item()
-        newItem3.title = "Buy Muesli"
-        itemArray.append(newItem3)
+//        let newItem = Item()
+//        newItem.title = "Find Mike"
+//        itemArray.append(newItem)
+//
+//        let newItem2 = Item()
+//        newItem2.title = "Buy eggos"
+//        itemArray.append(newItem2)
+//
+//        let newItem3 = Item()
+//        newItem3.title = "Buy Muesli"
+//        itemArray.append(newItem3)
         
         //loadItems() //Methode qui permet de charger les données sauvegarder le .plist
         
@@ -142,6 +142,7 @@ class TodoListViewController: UITableViewController {
             
             let newItem = Item(context: self.context) // Afin de pouvoir utiliser DataCore, il faut initialiser l'objet en utilisant l'option context et spécifier le context pour utiliser le delegate
             newItem.title = textField.text!
+            newItem.done = false
             
             // What will happen once the user click the add Item button on our UIAlert pop up
             self.itemArray.append(newItem)
