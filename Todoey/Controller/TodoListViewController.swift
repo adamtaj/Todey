@@ -9,18 +9,28 @@
 import UIKit
 import CoreData
 
+//Pour utiliser la Search bar il est important de declarer le protocole qui va nous permettre d'utiliser le delegate
+
 class TodoListViewController: UITableViewController {
 
     var itemArray = [Item]()
     
+    var selectedCategory : Category? { //On identifie grace à cette variable qu'elle est la category qui a été selectionné par l'utilisateur
+       // le code qui sera ecrit entre ces bracket va se trigger uniquement lorsque la variable aura une valeur car elle est marqué en tant que optionnal
+        didSet {
+            loadItems()
+        }
+        
+    }
     // on va récuperer le fichier plist qui contient la dernière sauvegarde
-    let dataFilePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
+    //let dataFilePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
     
     //let defaults = UserDefaults.standard // On stock les key-Value pairs de manière persistente. Use UserDefaults only  for small data. a utiliser seulement pour des variable ayant un data type standard et pour de ptite données
     
     
     // On créé le context. On va utiliser le delegate en le declarant ainsi UIApplication.shared.delegate as! AppDelegate
      // shared is the singelton pbject of UIApplication
+    // Cette ligne permet de créé le contexte
      let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
     
     override func viewDidLoad() {
@@ -41,7 +51,9 @@ class TodoListViewController: UITableViewController {
 //        newItem3.title = "Buy Muesli"
 //        itemArray.append(newItem3)
         
-        //loadItems() //Methode qui permet de charger les données sauvegarder le .plist
+        
+        
+       // loadItems() //Methode qui permet de charger les données sauvegarder dans la base de données
         
         //Permet de reinitisaliser les données qui ont été sauvegarder si on utilise le UserDefault
 //        if let items = (defaults.array(forKey: "TodoListArray") as? [Item]) {
@@ -100,7 +112,13 @@ class TodoListViewController: UITableViewController {
     
         //print(itemArray[indexPath.row])
         
-        itemArray[indexPath.row].done = !itemArray[indexPath.row].done //cette ligne de code permet d'inverser la valeur du boléen contenu dans done et remplace la boucle if ci-dessous
+        
+        // Code qui permet de supprimer la ligne associé au cell dans la  base de donnée. Attention l'ordre est important
+        //context.delete(itemArray[indexPath.row]) // On spécifie l'objet que l'on souhaite supprirmer dans le context
+        //itemArray.remove(at: indexPath.row) // On supprime la données dans le tableau
+        
+        
+        //itemArray[indexPath.row].done = !itemArray[indexPath.row].done //cette ligne de code permet d'inverser la valeur du boléen contenu dans done et remplace la boucle if ci-dessous
 //        if itemArray[indexPath.row].done == false {
 //            itemArray[indexPath.row].done = true
 //        } else {
@@ -143,6 +161,7 @@ class TodoListViewController: UITableViewController {
             let newItem = Item(context: self.context) // Afin de pouvoir utiliser DataCore, il faut initialiser l'objet en utilisant l'option context et spécifier le context pour utiliser le delegate
             newItem.title = textField.text!
             newItem.done = false
+            newItem.parentCategory = self.selectedCategory // On set la clé unique parentCategory en fonction de la categorie que l'user à choisi. Cela veut dire que à chaque fois que un utilisateur va ajouter un nouvel item dans la categorie de son choix, cet item sera automatiquement associé à la catégorie
             
             // What will happen once the user click the add Item button on our UIAlert pop up
             self.itemArray.append(newItem)
@@ -199,8 +218,8 @@ class TodoListViewController: UITableViewController {
         
     }
     
-//    func loadItems() {
-//        // Fonction qui va permettre de lire les données dans notre fichier de sauvegarde .plist
+    func loadItems(with request: NSFetchRequest<Item> = Item.fetchRequest(), predicate: NSPredicate? = nil) { // la notation du = au sein de la fonction signifie que l'on spécifie une valeur par défaut si aucune valeur n'est declaré
+//        // code qui va permettre de lire les données dans notre fichier de sauvegarde .plist
 //
 //        if let data = try? Data(contentsOf: dataFilePath!) {
 //            let decoder = PropertyListDecoder()
@@ -211,7 +230,89 @@ class TodoListViewController: UITableViewController {
 //            }
 //
 //        }
-//    }
+    
+        // code qui va permettre de lire les données sauvegarder dans la base de données CoreData
+        // On créé la requete en specifiant le type d'objet que l'on souhaite récupérer
+    //let request : NSFetchRequest<Item> = Item.fetchRequest()
+        
+        // Avant de mettre à jour, il faut filtrer les données en faisant apparaitre les items associé à la categorie selectionné. Pour cela en utilise un predicate
+        let categoryPredicate = NSPredicate(format: "parentCategory.name MATCHES %@", selectedCategory!.name!)
+        
+      
+        // Afin d'éviter la problématique d'overwrite des predicate et ne plus request la database en fonction de la bonne requete. on créé un compoundPredicate qui stock toutes les requetes
+        
+        if let additionalPredicate = predicate {
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [categoryPredicate, additionalPredicate])
+        } else {
+            request.predicate = categoryPredicate
+        }
+        
+        
+        
+        
+        
+   
+        // On met à jour le itemArray en récuperant les données de la DB
+        do {
+        itemArray = try context.fetch(request)
+    } catch {
+        print("Error fetching data from context\(error)")
+    }
+        
+        tableView.reloadData()
+    
+    }
+    
+    
+    
+    
+    
 
+}
+
+//MARK: - SearchBar delegate
+
+
+extension TodoListViewController: UISearchBarDelegate {
+   
+    // Fonction qui va premettre à l'utilisateur de rentrer dans le bar de recherche un texte et l'application va requeter la base de données pour récuperer les données correspondante
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        
+        // Afin de lire le contenu du context, il faut créer une request. Cette ligne va permettre de récuperer toutes les données de la base de données dans request
+        let request : NSFetchRequest<Item> = Item.fetchRequest()
+        
+        // Cette ligne de code permet de créer la requete suivante : Recuperer les ligne dans la base de données qui dans la variable title contiennent la valeur entrée dans le searchBar (%@ = Argument)
+        let predicate = NSPredicate(format: "title CONTAINS[cd] %@", searchBar.text!)
+        
+        // Cette ligne va permettre de filtrer sur la varibale title
+        request.sortDescriptors = [NSSortDescriptor(key: "title", ascending: true)] // Il est important de noté le sortDescriptor en tant que tableau
+         
+        
+       // On met à jour le itemArray pour faire apparaitre les données souhaité
+        loadItems(with: request, predicate: predicate)
+        
+    }
+    
+    // Cette methode est trigger a chaque fois qu'une nouvelle lettre est entré dans la bar de recherche. Dès que l'on appuie sur la croix, la table initial est chargée
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+       
+        // Dès qu'il n'y a plus de lettre dans la bar de recher on revient à la normal
+        if searchBar.text?.count == 0 {
+           loadItems()
+            
+           // DispatchQueue permet de mettre le thread entre les bracket au background. Cela permet à l'user d'interagir avec l'application sans attendre la fin du thread
+            DispatchQueue.main.async {
+                // Le searchbar n'est plus le first responder. En gros le search bar n'est plus selectionné
+                searchBar.resignFirstResponder()
+            }
+            
+        }
+        
+    }
+    
+    
+    
+    
+    
 }
 
