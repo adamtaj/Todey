@@ -7,13 +7,15 @@
 //
 
 import UIKit
-import CoreData
+import RealmSwift
+import ChameleonFramework
 
 //Pour utiliser la Search bar il est important de declarer le protocole qui va nous permettre d'utiliser le delegate
 
-class TodoListViewController: UITableViewController {
+class TodoListViewController: SwipeTableViewController {
 
-    var itemArray = [Item]()
+    var todoItems: Results<Item>?
+    let realm = try! Realm() // tjrs initialisé un realm
     
     var selectedCategory : Category? { //On identifie grace à cette variable qu'elle est la category qui a été selectionné par l'utilisateur
        // le code qui sera ecrit entre ces bracket va se trigger uniquement lorsque la variable aura une valeur car elle est marqué en tant que optionnal
@@ -28,14 +30,14 @@ class TodoListViewController: UITableViewController {
     //let defaults = UserDefaults.standard // On stock les key-Value pairs de manière persistente. Use UserDefaults only  for small data. a utiliser seulement pour des variable ayant un data type standard et pour de ptite données
     
     
-    // On créé le context. On va utiliser le delegate en le declarant ainsi UIApplication.shared.delegate as! AppDelegate
-     // shared is the singelton pbject of UIApplication
-    // Cette ligne permet de créé le contexte
-     let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
+  
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
+        tableView.separatorStyle = .none
+        
+       
         //print(dataFilePath)
         
         
@@ -67,77 +69,74 @@ class TodoListViewController: UITableViewController {
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         // Fonction qui permet de déterminer combien de ligne va avoir le TableView. Dans notre cas c'est equivalent au nombre de ligne dans le tableau messages
-        return itemArray.count
+        return todoItems?.count ?? 1
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         // Fonction qui permet de populate chaque ligne du TableView. Cette fonction est appelé auatant de fois qu'il y a de ligne dans le tableau messages
         
-        let item = itemArray[indexPath.row]
+       // On verifie si le container qui contient les items n'est pas vide
+          
+            let cell = super.tableView(tableView, cellForRowAt: indexPath) // ce code remplace le dequeueReusableCell et permet d'appeler le cell qui est declaré dans la super classe
+            
+        if let item = todoItems?[indexPath.row] {
+            
+            cell.textLabel?.text = item.title
+            cell.accessoryType = item.done ? .checkmark : .none
+            
+           
+            // FlatSkyBlue = Une couleur proposé par le framework Camelon. l'option darken permet de créé un effet Gradient entre les couleurs. Il suffit du spécifier en entré un pourcentage. Dans notre cas pour avoir un effet gradient, il faut prend la position de l'item et le diviser par le nombre total d'item.
+            // boucle if car FlatSkyBlue est optional
+            
+            let categoryColor = UIColor(hexString: selectedCategory?.backgroundColor ?? "1D9BF6")
+             
+
+            if let colour = categoryColor!.darken(byPercentage:CGFloat(indexPath.row) / CGFloat(todoItems!.count)) {
+                
+                cell.backgroundColor = colour
+               // Ligne de code qui permet d'adapter la couleur du text en fonction de la couleur du background.
+                cell.textLabel?.textColor = ContrastColorOf(colour, returnFlat: true)
+                
+            }
+            
+             
+        } else {
+            cell.textLabel?.text = "No Item added yet"
+        }
         
-        let cell = tableView.dequeueReusableCell(withIdentifier: "ToItemCell", for: indexPath) //Cell = Un message
-        cell.textLabel?.text = item.title
-        //cell.textLabel?.text = messages[indexPath.row].body // permet de mettre le message associé à la ligne séléctionné dans une cell. Cette ligne de code suppose que c'est un cell par defaut
-        
-        
-        
-        
-        // Condition qui permet de verifier si la cell est marqué comme check ou non. Le bolléen done nous pourmet de savoir s'il faut checker ou non l'item en fonction des cliques de l'user
-        
-        // Ternary operator ==> format spécial qui peut remplacer un if
-        //Syntaxe : value = condition ? valueIfTrue : valueIfFalse
-        
-        cell.accessoryType = item.done == true ? .checkmark : .none // this ligne replace the if statement below
-        
-    
-//        if itemArray[indexPath.row].done == true {
-//            cell.accessoryType = .checkmark
-//        } else {
-//            cell.accessoryType = .none
-//        }
-        
-       
-        
-        
-        return cell
+
+            
+            return cell
+            
         
         
         }
     
-    
-    //Mark - TableView Delegate Methods
+    //MARK: - TableView Delegate Methods
+   
     
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-           // Fonction qui permet de donner l'index de la ligne du cell sur lequel l'utilisateur à cliqué
-    
-        //print(itemArray[indexPath.row])
+           // Fonction qui permet de donner l'index de la ligne du cell sur lequel l'utilisateur à cliqué et realiser une action lorsque la cell à etait selectionné
+        
+        // Update the realm data base
+        if let item = todoItems?[indexPath.row] { // On verifie si le container qui contient les items n'est pas vide
+          
+            do {
+            try realm.write {
+                item.done = !item.done // On sauvegarde la valeur opposé de done. Exemple: si un item apparait en tant que check, l'état de done passera a false en cliquant sur le cell
+            }
+            } catch {
+                print("Error saving done status, \(error)")
+            }
+            
+            
+            
+        }
         
         
-        // Code qui permet de supprimer la ligne associé au cell dans la  base de donnée. Attention l'ordre est important
-        //context.delete(itemArray[indexPath.row]) // On spécifie l'objet que l'on souhaite supprirmer dans le context
-        //itemArray.remove(at: indexPath.row) // On supprime la données dans le tableau
+        tableView.reloadData()
         
-        
-        //itemArray[indexPath.row].done = !itemArray[indexPath.row].done //cette ligne de code permet d'inverser la valeur du boléen contenu dans done et remplace la boucle if ci-dessous
-//        if itemArray[indexPath.row].done == false {
-//            itemArray[indexPath.row].done = true
-//        } else {
-//            itemArray[indexPath.row].done = false
-//        }
-        
-        
-        tableView.reloadData() //permet de de reload les data et mettre à jour les items avec les dernière données
-        
-//       // Condition qui permet de verifier si la cell est marqué comme check ou non. Cette boucle à été remplacé dans une autre fonction cf : CellForRawAt
-//        if tableView.cellForRow(at: indexPath)?.accessoryType == .checkmark {
-//            tableView.cellForRow(at: indexPath)?.accessoryType = .none
-//        } else {
-//            // Ligne de code qui permet d'ajouter l'accessoire checkmark dans toutes les cells
-//            tableView.cellForRow(at: indexPath)?.accessoryType = .checkmark
-//        }
-        
-        
-        saveItems()
+        //saveItems()
         tableView.deselectRow(at: indexPath, animated: true) //Permet de "deselectionner" le cell une fois que l'utilisateur a cliqué dessus. C'est utile à des fin de user interface. Le cell deviendra gris une fraction de secondes puis redevient normal
       }
     
@@ -158,18 +157,29 @@ class TodoListViewController: UITableViewController {
             
            
             
-            let newItem = Item(context: self.context) // Afin de pouvoir utiliser DataCore, il faut initialiser l'objet en utilisant l'option context et spécifier le context pour utiliser le delegate
-            newItem.title = textField.text!
-            newItem.done = false
-            newItem.parentCategory = self.selectedCategory // On set la clé unique parentCategory en fonction de la categorie que l'user à choisi. Cela veut dire que à chaque fois que un utilisateur va ajouter un nouvel item dans la categorie de son choix, cet item sera automatiquement associé à la catégorie
+//            let newItem = Item(context: self.context) // Afin de pouvoir utiliser DataCore, il faut initialiser l'objet en utilisant l'option context et spécifier le context pour utiliser le delegate
+//            newItem.title = textField.text!
+//            newItem.done = false
+//            newItem.parentCategory = self.selectedCategory // On set la clé unique parentCategory en fonction de la categorie que l'user à choisi. Cela veut dire que à chaque fois que un utilisateur va ajouter un nouvel item dans la categorie de son choix, cet item sera automatiquement associé à la catégorie
             
-            // What will happen once the user click the add Item button on our UIAlert pop up
-            self.itemArray.append(newItem)
+            if let currentCategory = self.selectedCategory { // On check si la category selectionné n'est pas nul
+                
+                do {
+                    try self.realm.write { // On sauvegarde le nouvel item in our Realm
+                        let newItem = Item()
+                        newItem.title = textField.text!
+                        newItem.dateCreated = Date()
+                        currentCategory.items.append(newItem) // On rajoute le nouvel Item créé dans la liste des Item de la category selectionné
+                    }
+                    
+                } catch {
+                    print("Error saving context, \(error)")
+                   
+                }
+            }
             
-            // Permet de sauvegarder les modifs de l'utilisateur dans notre defaults
-           // self.defaults.set(self.itemArray, forKey: "TodoListArray") //Tjrs renseigner une clé pour récupérer les data par la suite
-           
-            self.saveItems()
+            
+        
             
            // Permet de rafraichire la tableView ce qui ferra apparaitre le nouvel item dans un new cell
             self.tableView.reloadData()
@@ -193,74 +203,15 @@ class TodoListViewController: UITableViewController {
     
     //MARK: - Model Manupulation Methods
     
-    func saveItems() {
-        
-       
-        // Block de code permettant de sauvegarder les items dans la tablke CoreData
-        do {
-            try self.context.save()
-            
-        } catch {
-            print("Error saving context, \(error)")
-           
-        }
-        
-//        // Utile pour sauvegarder les données dans un plist
-        // Ce bloc de code nous permet de sauvegarder les données de l'utilisateur en local utilisant une methode plus fiable que le UserDefault (codable method)
-      //  let encoder = PropertyListEncoder()
-//        do {
-//            let data = try encoder.encode(itemArray) //on encode les données pour pouvoir les stocker de manière standard
-//            try data.write(to: dataFilePath!)
-//
-//        } catch {
-//            print("Error encoding item array \(error)")
-//        }
-        
-    }
+
     
-    func loadItems(with request: NSFetchRequest<Item> = Item.fetchRequest(), predicate: NSPredicate? = nil) { // la notation du = au sein de la fonction signifie que l'on spécifie une valeur par défaut si aucune valeur n'est declaré
-//        // code qui va permettre de lire les données dans notre fichier de sauvegarde .plist
-//
-//        if let data = try? Data(contentsOf: dataFilePath!) {
-//            let decoder = PropertyListDecoder()
-//            do {
-//            itemArray = try decoder.decode([Item].self, from: data)
-//            } catch {
-//                print("Error decoding item array, \(error)")
-//            }
-//
-//        }
-    
-        // code qui va permettre de lire les données sauvegarder dans la base de données CoreData
-        // On créé la requete en specifiant le type d'objet que l'on souhaite récupérer
-    //let request : NSFetchRequest<Item> = Item.fetchRequest()
+    func loadItems() {
         
-        // Avant de mettre à jour, il faut filtrer les données en faisant apparaitre les items associé à la categorie selectionné. Pour cela en utilise un predicate
-        let categoryPredicate = NSPredicate(format: "parentCategory.name MATCHES %@", selectedCategory!.name!)
-        
-      
-        // Afin d'éviter la problématique d'overwrite des predicate et ne plus request la database en fonction de la bonne requete. on créé un compoundPredicate qui stock toutes les requetes
-        
-        if let additionalPredicate = predicate {
-            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [categoryPredicate, additionalPredicate])
-        } else {
-            request.predicate = categoryPredicate
-        }
-        
-        
-        
-        
-        
-   
-        // On met à jour le itemArray en récuperant les données de la DB
-        do {
-        itemArray = try context.fetch(request)
-    } catch {
-        print("Error fetching data from context\(error)")
-    }
-        
+       // ligne de code qui permet de recuperer les Item de la base de données realm par ordre alphabetique en filtrant sur le type de category a laquel l'item appartient
+        todoItems = selectedCategory?.items.sorted(byKeyPath: "title", ascending: true)
+
         tableView.reloadData()
-    
+
     }
     
     
@@ -274,45 +225,62 @@ class TodoListViewController: UITableViewController {
 
 
 extension TodoListViewController: UISearchBarDelegate {
-   
+
     // Fonction qui va premettre à l'utilisateur de rentrer dans le bar de recherche un texte et l'application va requeter la base de données pour récuperer les données correspondante
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
         
-        // Afin de lire le contenu du context, il faut créer une request. Cette ligne va permettre de récuperer toutes les données de la base de données dans request
-        let request : NSFetchRequest<Item> = Item.fetchRequest()
         
-        // Cette ligne de code permet de créer la requete suivante : Recuperer les ligne dans la base de données qui dans la variable title contiennent la valeur entrée dans le searchBar (%@ = Argument)
-        let predicate = NSPredicate(format: "title CONTAINS[cd] %@", searchBar.text!)
+        // Cette ligne permet de récuper seulement les items qui respecte le regex définit. En gros cela permet de recuperer les items via la bar de recherche
+        //Predicate = Query ou un Regex
+        todoItems = todoItems?.filter("title CONTAINS[cd] %@", searchBar.text!).sorted(byKeyPath: "dateCreated", ascending: true)
         
-        // Cette ligne va permettre de filtrer sur la varibale title
-        request.sortDescriptors = [NSSortDescriptor(key: "title", ascending: true)] // Il est important de noté le sortDescriptor en tant que tableau
-         
+        tableView.reloadData()
         
-       // On met à jour le itemArray pour faire apparaitre les données souhaité
-        loadItems(with: request, predicate: predicate)
-        
+
     }
-    
+
     // Cette methode est trigger a chaque fois qu'une nouvelle lettre est entré dans la bar de recherche. Dès que l'on appuie sur la croix, la table initial est chargée
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
-       
+
         // Dès qu'il n'y a plus de lettre dans la bar de recher on revient à la normal
         if searchBar.text?.count == 0 {
            loadItems()
-            
+
            // DispatchQueue permet de mettre le thread entre les bracket au background. Cela permet à l'user d'interagir avec l'application sans attendre la fin du thread
             DispatchQueue.main.async {
                 // Le searchbar n'est plus le first responder. En gros le search bar n'est plus selectionné
                 searchBar.resignFirstResponder()
             }
-            
+
         }
-        
+
     }
     
     
+    //MARK: - Delete Data From SwipeTableViewController
     
+    // L'objectif ici est de réecrire la fonction updateModel initialement declaré dans la super classe SwipeTableViewControler. Cele va permettre de recuperer les données (category selectionné par l'utilisateur) qui sont disponible dans cette classe pour pouvoir trigger la fonction dans la super classe et supprimer la category
+    override func updateModel(at indexPath: IndexPath) {
+        // Ligne de code qui nous permet de supprimer une categorie
+        
+        if let itemForDeletion = todoItems?[indexPath.row] {
+
+                do {
+                    try self.realm.write {
+
+                        self.realm.delete(itemForDeletion)
+                    }
+
+                } catch {
+                    print("Error saving context, \(error)")
+
+                }
+
+                tableView.reloadData()
+           }
+    }
     
     
 }
+
 

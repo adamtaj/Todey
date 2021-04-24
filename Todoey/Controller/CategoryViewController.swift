@@ -7,12 +7,17 @@
 //
 
 import UIKit
-import CoreData
+import RealmSwift
+import ChameleonFramework
 
-class CategoryViewController: UITableViewController {
 
-    var categoryArray = [Category]()
-    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
+class CategoryViewController: SwipeTableViewController { // On a créé une super classe Swipe exprès pour profiter du code pour Swiper
+    
+    // on initialise un realm
+    let realm = try! Realm()
+    
+    var categoryArray: Results<Category>? // On le declare en tant que results pour pouvoir recuperer les données dans une realm database. Cf : LoadCategories method
+    
     
     
     
@@ -21,42 +26,59 @@ class CategoryViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        loadCategories()
-
+        loadCategories() // on met à jour l'interface avec toutes les categories qui ont été save
+        
+        tableView.separatorStyle = .none // Nous permet de supprimer les separation entre les cell
+       
         
     }
-
-
-   
+    
+    
+    
     
     
     //MARK: - TableView Data source Methods
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         // Fonction qui permet de déterminer combien de ligne va avoir le TableView. Dans notre cas c'est equivalent au nombre de ligne dans le tableau messages
-        return categoryArray.count
+        return categoryArray?.count ?? 1 //On sécurise le fait que si category est nill on retourne 1
     }
     
     
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        // Fonction qui permet de populate chaque ligne du TableView. Cette fonction est appelé auatant de fois qu'il y a de ligne dans le tableau messages
-        
-        let category = categoryArray[indexPath.row]
-        
-        
-        let cell = tableView.dequeueReusableCell(withIdentifier: "CategoryCell", for: indexPath) //Cell = Un message. Cette ligne de code permet de créé un reusable cell
-        cell.textLabel?.text = category.name
     
+    
+    
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+       
+        // Fonction qui permet de populate chaque ligne du TableView. Cette fonction est appelé auatant de fois qu'il y a de ligne dans le tableau messages
+        // Cette methode à été dans un premeir temps déclarer dans la super classe SwipeTableViewController
+        
+        let category = categoryArray?[indexPath.row]
+        
+        
+       //  let cell = tableView.dequeueReusableCell(withIdentifier: "CategoryCell", for: indexPath) as! SwipeTableViewCell //Cell = Un message. Cette ligne de code permet de créé un reusable cell. Cette ligne de code est initialisé dans la fonction dans la super classe
+        // on downcast le cel en SwipeTableViewCell pour pouvoir profiter des fonctionnalité de la library qui permet de swiper une cell et proposer des actions
+        let cell = super.tableView(tableView, cellForRowAt: indexPath) // ce code remplace le dequeueReusableCell et permet d'appeler le cell qui est declaré dans la super classe
+        
+        cell.textLabel?.text = category?.name ?? "No Categories added yet"
+       // cell.delegate = self
+       
+        
+        // pour convertir un string en UIColor : UIColor(hexString: String)
+        cell.backgroundColor = UIColor(hexString: category?.backgroundColor ?? "1D9BF6")
+        
+        
+        
         return cell
         
         
-        }
+    }
     
     
     
     //MARK: - TableView Delegate Methods
     
-    
+    // Fonction appelé lorsque l'on clique sur un cell
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         performSegue(withIdentifier: "goToItems", sender: self)
     }
@@ -64,13 +86,13 @@ class CategoryViewController: UITableViewController {
     
     // fonction appelé lorsque le perform la Segue
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-       
+        
         // On créé le View Controller que l'on souhaite faire apparaitre en tant que TodoListViewController
         let destinationVC = segue.destination as! TodoListViewController
         
         //identify the current row that is selected
         if let indexPath = tableView.indexPathForSelectedRow {
-            destinationVC.selectedCategory = categoryArray[indexPath.row]
+            destinationVC.selectedCategory = categoryArray?[indexPath.row]
         }
         
         
@@ -90,31 +112,29 @@ class CategoryViewController: UITableViewController {
         
         let action = UIAlertAction(title: "Add Category", style: .default) { (action) in
             
-            // on créé un nouvel objet Item pour y stocker les différente valeur d'un Item
-            // let newItem = Item() Utile pour le stockage utilisant les .plist et l'encodage
             
-           
             
-            let newCategory = Category(context: self.context) // Afin de pouvoir utiliser DataCore, il faut initialiser l'objet en utilisant l'option context et spécifier le context pour utiliser le delegate
+            
+            
+            let newCategory = Category() // On initie une nouvelle category
             newCategory.name = textField.text!
+            newCategory.backgroundColor = UIColor.randomFlat().hexValue() //Permet de changer le background du cell avec une couleur aléatoir qui vient du Cameleon framework. Le hexValue permet de convertir la couleur en string
             
             
-            // On rajouter la categorye créé par l'user dans notre tableau
-            self.categoryArray.append(newCategory)
+            // On rajouter la category créé par l'user dans notre tableau
+            // self.categoryArray.append(newCategory) dans le cas de l'utilisation du realm, nous n'avons plus besoin de mettre à jour le tableau. Cela est fait automatiquement
             
-            // Permet de sauvegarder les modifs de l'utilisateur dans notre defaults
-           // self.defaults.set(self.itemArray, forKey: "TodoListArray") //Tjrs renseigner une clé pour récupérer les data par la suite
-           
-            self.saveCategories()
             
-           // Permet de rafraichire la tableView ce qui ferra apparaitre le nouvel item dans un new cell
+            self.saveCategories(category: newCategory)
+            
+            // Permet de rafraichire la tableView ce qui ferra apparaitre le nouvel item dans un new cell
             self.tableView.reloadData()
         }
         
         // Permet de rajouter un text field dans la popup
         alert.addTextField { (alertTextField) in
             alertTextField.placeholder = "Create new category" // titre du textfield en background
-           // Permet de sortir de cette closure le alertTextField qui contient le text de l'utilisateur qu'il a rentré de le textField
+            // Permet de sortir de cette closure le alertTextField qui contient le text de l'utilisateur qu'il a rentré de le textField
             textField = alertTextField
             
         }
@@ -129,39 +149,59 @@ class CategoryViewController: UITableViewController {
     
     //MARK: - Data Manipulation methods
     
-    func saveCategories() {
+    func saveCategories(category: Category) {
         
-       
-        // Block de code permettant de sauvegarder les items dans la tablke CoreData
+        
+        // Block de code permettant de sauvegarder les items dans la db realm
         do {
-            try self.context.save()
+            try realm.write {
+                realm.add(category)
+            }
             
         } catch {
             print("Error saving context, \(error)")
-           
+            
         }
         
         
     }
     
-    func loadCategories(with request: NSFetchRequest<Category> = Category.fetchRequest()) { // la notation du = au sein de la fonction signifie que l'on spécifie une valeur par défaut si aucune valeur n'est declaré
-    
-        // code qui va permettre de lire les données sauvegarder dans la base de données CoreData
-        // On créé la requete en specifiant le type d'objet que l'on souhaite récupérer
-    //let request : NSFetchRequest<Item> = Item.fetchRequest()
-   
-        // On met à jour le itemArray en récuperant les données de la DB
-        do {
-        categoryArray = try context.fetch(request)
-    } catch {
-        print("Error fetching data from context\(error)")
-    }
+    func loadCategories() {
+        
+        categoryArray = realm.objects(Category.self) // Ligne de code qui va recuperer toutes les données dans notre realm ayant le type Category. Attnetion à ne pas oublier de declarer le category Array en tant que results
+        
+        
+        
         
         tableView.reloadData()
-    
+        
     }
     
     
+    //MARK: - Delete Data From SwipeTableViewController
     
+    // L'objectif ici est de réecrire la fonction updateModel initialement declaré dans la super classe SwipeTableViewControler. Cele va permettre de recuperer les données (category selectionné par l'utilisateur) qui sont disponible dans cette classe pour pouvoir trigger la fonction dans la super classe et supprimer la category
+    override func updateModel(at indexPath: IndexPath) {
+        // Ligne de code qui nous permet de supprimer une categorie
+            if let categoryForDeletion = self.categoryArray?[indexPath.row] {
+
+                do {
+                    try self.realm.write {
+
+                        self.realm.delete(categoryForDeletion)
+                    }
+
+                } catch {
+                    print("Error saving context, \(error)")
+
+                }
+
+                tableView.reloadData()
+           }
+    }
     
 }
+
+
+
+
